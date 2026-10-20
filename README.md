@@ -325,3 +325,6 @@ Coverage gate: ≥ 90% on `comparison.py` and `safety.py`.
 ## License
 
 MIT — see [LICENSE](LICENSE). © 2026 Shashi Kundan.
+
+![Apiparity API Comparison Infographic](apiparity-infographic.png)
+

@@ -6,7 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-20
+
 ### Fixed
+
+- Windows CI path false positives: URL leak assertions now ignore filesystem paths so temporary directories (e.g. `C:\Users\runneradmin\...`) do not trigger failures.
+- URL redaction hardening: decode encoded query/fragment parameter names before sensitivity checks; redact sensitive keys in URL fragments; IPv6 hostnames preserved with brackets in `redact_url()`.
+- Target URL construction: handle base URLs with query/fragment components safely when appending corpus paths; preserve base query params.
+
+### Fixed (previous)
 
 - URL credentials no longer leak into safety summaries: the pre-run safety report
   (`! SAFETY: ...`), `SafetyError` refusal messages, and the runner metadata
