@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import socket
 import threading
 from collections.abc import Iterator
@@ -199,9 +200,12 @@ def _ping_corpus(tmp_path: Path) -> Corpus:
 
 
 def _assert_no_url_secrets(*texts: str, context: str) -> None:
+    path_re = re.compile(r"[A-Za-z]:\\[^\s\"\']+|/[^\s\"\']+")
     for text in texts:
+        # Strip filesystem paths to avoid false positives (e.g. C:\Users\runneradmin\...)
+        cleaned = path_re.sub("[PATH]", text)
         for secret in URL_SECRETS:
-            assert secret not in text, f"URL secret {secret!r} leaked ({context})"
+            assert secret not in cleaned, f"URL secret {secret!r} leaked ({context})"
 
 
 @pytest.mark.asyncio

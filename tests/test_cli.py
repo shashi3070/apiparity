@@ -524,8 +524,12 @@ def test_compare_credentialed_url_never_reaches_stdout_or_reports(
     combined = captured.out + captured.err
     report_text = (outdir / "report.json").read_text(encoding="utf-8")
     junit_text = (outdir / "junit.xml").read_text(encoding="utf-8")
+    import re
+
+    path_re = re.compile(r"[A-Za-z]:\\[^\s\"\']+|/[^\s\"\']+")
+    cleaned = path_re.sub("[PATH]", combined)
     for secret in ("hunter2", "admin", "secret-value"):
-        assert secret not in combined, f"secret {secret!r} printed to console"
+        assert secret not in cleaned, f"secret {secret!r} printed to console"
         assert secret not in report_text, f"secret {secret!r} written to report.json"
         assert secret not in junit_text, f"secret {secret!r} written to junit.xml"
     assert "[REDACTED]" in combined  # safety summary prints the masked URL

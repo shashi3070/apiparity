@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from apiparity.models import RedactionConfig
 
@@ -45,6 +45,7 @@ _SENSITIVE_QUERY_SUBSTRINGS = (
 
 _USERINFO_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)(?P<userinfo>[^/@\s]+)@")
 _QUERY_RE = re.compile(r"(?P<prefix>(?:^|[?&])(?P<key>[^=&#\s]+)=)(?P<value>[^&#\s]*)")
+_FRAGMENT_QUERY_RE = re.compile(r"(?P<prefix>(?:^|[&#])(?P<key>[^=&#\s]+)=)(?P<value>[^&#\s]*)")
 
 
 def is_sensitive_header(name: str, config: RedactionConfig) -> bool:
@@ -106,20 +107,46 @@ def redact_url(url: str) -> str:
     try:
         parts = urlsplit(url)
     except ValueError:
-        return _USERINFO_RE.sub(lambda m: f"{m.group('scheme')}{REDACTED}@", url)
+        text = _USERINFO_RE.sub(lambda m: f"{m.group('scheme')}{REDACTED}@", url)
+
+        def _mask_query(m: re.Match[str]) -> str:
+            key = unquote(m.group("key"))
+            value = REDACTED if is_sensitive_query_key(key) else m.group("value")
+            return f"{m.group('prefix')}{value}"
+
+        text = _QUERY_RE.sub(_mask_query, text)
+
+        def _mask_fragment(m: re.Match[str]) -> str:
+            key = unquote(m.group("key"))
+            value = REDACTED if is_sensitive_query_key(key) else m.group("value")
+            return f"{m.group('prefix')}{value}"
+
+        text = _FRAGMENT_QUERY_RE.sub(_mask_fragment, text)
+        return text
 
     host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
-    netloc = host  # userinfo deliberately dropped
+    if host and ":" in host and "[" not in host:
+        host = f"[{host}]"
+    elif parts.hostname and parts.hostname.count(":") >= 2 and "[" not in host:
+        host = f"[{parts.hostname}]"
+    netloc = (f"{host}:{parts.port}" if host else f":{parts.port}") if parts.port else host
+    if netloc == "" and (parts.hostname is None and host):
+        netloc = host
 
     def mask_query(match: re.Match[str]) -> str:
-        key = match.group("key")
+        key = unquote(match.group("key"))
         value = REDACTED if is_sensitive_query_key(key) else match.group("value")
         return f"{match.group('prefix')}{value}"
 
     query = _QUERY_RE.sub(mask_query, parts.query)
-    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+
+    def mask_fragment(match: re.Match[str]) -> str:
+        key = unquote(match.group("key"))
+        value = REDACTED if is_sensitive_query_key(key) else match.group("value")
+        return f"{match.group('prefix')}{value}"
+
+    fragment = _FRAGMENT_QUERY_RE.sub(mask_fragment, parts.fragment)
+    return urlunsplit((parts.scheme, netloc, parts.path, query, fragment))
 
 
 def sanitize_exception_message(message: str, *, limit: int = 500) -> str:
@@ -127,11 +154,18 @@ def sanitize_exception_message(message: str, *, limit: int = 500) -> str:
     text = _USERINFO_RE.sub(lambda m: f"{m.group('scheme')}{REDACTED}@", message)
 
     def mask_query(match: re.Match[str]) -> str:
-        key = match.group("key")
+        key = unquote(match.group("key"))
         value = REDACTED if is_sensitive_query_key(key) else match.group("value")
         return f"{match.group('prefix')}{value}"
 
     text = _QUERY_RE.sub(mask_query, text)
+
+    def mask_fragment(match: re.Match[str]) -> str:
+        key = unquote(match.group("key"))
+        value = REDACTED if is_sensitive_query_key(key) else match.group("value")
+        return f"{match.group('prefix')}{value}"
+
+    text = _FRAGMENT_QUERY_RE.sub(mask_fragment, text)
     text = text.replace("\n", " ").strip()
     if len(text) > limit:
         text = text[: limit - 1] + "…"
