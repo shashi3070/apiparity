@@ -112,7 +112,7 @@ see [`examples/README.md`](examples/README.md).
 |---|---|---|---|
 | `http` | `--old-url` / `--new-url` | Real HTTP via httpx (loopback enforced by default) | Two deployed/local services |
 | `wsgi` | `--old-app mod:attr --old-kind wsgi` | In-process via `httpx.WSGITransport` | Flask, Werkzeug, any WSGI app |
-| `asgi` | `--new-app mod:attr --new-kind asgi` | In-process via `httpx.ASGITransport` + manual lifespan driver | FastAPI, Starlette, any ASGI app |
+| `asgi` | `--new-app mod:attr --new-kind asgi` | In-process via `httpx.ASGITransport` + manual lifespan driver (`--old-lifespan`/`--new-lifespan`: `auto`\|`required`\|`off`) | FastAPI, Starlette, any ASGI app |
 
 Mixed modes are fine (WSGI baseline vs ASGI candidate — the flagship use case). Apps can
 be imported directly (`legacy_flask.app:app`) or via a factory
@@ -158,7 +158,7 @@ cases:
 version: 1
 targets:
   old: {kind: http, url: "http://127.0.0.1:5000"}
-  new: {kind: asgi, app: "migrated_fastapi.app:app"}
+  new: {kind: asgi, app: "migrated_fastapi.app:app", lifespan: "auto"}
 comparison:
   max_differences_per_case: 50
   response_size_limit_bytes: 1048576

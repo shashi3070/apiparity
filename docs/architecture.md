@@ -20,8 +20,8 @@ How apiparity is put together, and why. The behavioral contract lives in
         ┌──────────────────┼──────────────────┐
         ▼                  ▼                  ▼
   targets/http_target  wsgi_target      asgi_target
-  (httpx.AsyncClient,  (WSGITransport   (ASGITransport +
-   trust_env=False)     + to_thread)     manual lifespan driver)
+   (httpx.AsyncClient,  (WSGITransport   (ASGITransport +
+    trust_env=False)     + daemon thread) manual lifespan driver)
         │                  │                  │
         └──────────────────┴──────────────────┘
                            │  ResponseSnapshot (per side)
@@ -81,9 +81,13 @@ never reach reports.
 ### WSGI (`wsgi_target.py`)
 
 `httpx.WSGITransport` runs the WSGI app synchronously, so each request is dispatched
-via `asyncio.to_thread`; the corpus is sequential, so only one thread is active per
-target. Local transports cannot enforce network timeouts (the app is in-process and
-trusted — documented in `docs/safety.md`); the timeout kwarg is dropped.
+to a dedicated daemon thread; the corpus is sequential, so only one thread is active
+per target. Local transports cannot enforce network timeouts themselves, so the
+per-request timeout (case → target → run default) is enforced on the event loop: at
+the deadline the run stops waiting, returns a `timeout` snapshot, and the thread is
+abandoned. A handler that never returns therefore cannot hang the run or process
+exit; whatever it eventually produces is discarded. The trade-off (a timed-out
+handler keeps consuming CPU until it returns) is documented in `docs/safety.md`.
 
 **PEP 3333 fix.** httpx's `WSGITransport` passes the URL-*decoded* Unicode string as
 `PATH_INFO`, but PEP 3333 requires the raw request bytes represented as a latin-1
@@ -96,11 +100,24 @@ round-trip is the identity for ASCII paths.
 ### ASGI (`asgi_target.py`)
 
 `httpx.ASGITransport` never runs the lifespan protocol, so this target drives it
-manually on the same event loop: `lifespan.startup` is sent during `startup()`;
-`lifespan.startup.failed` raises `TargetInitError` (fail closed, no fallback);
-applications that ignore lifespan or raise outside the protocol are treated as
-lifespan-less and run without startup hooks; `lifespan.shutdown` is always attempted
-during `shutdown()`. A hung startup fails closed after a 10 s timeout.
+manually on the same event loop, governed by `targets.<side>.lifespan`:
+
+- **`auto`** (default): `lifespan.startup` is sent during `startup()`. A
+  `lifespan.startup.failed` message **or an uncaught exception in the lifespan
+  task** raises `TargetInitError` — fail closed, and startup errors are never
+  concealed as "app doesn't support lifespan". An app whose lifespan task exits
+  cleanly without ever sending a message *is* treated as lifespan-less and runs
+  without startup hooks.
+- **`required`**: like `auto`, but an app that never sends a startup message
+  (clean exit included) raises `TargetInitError`. Use it to guarantee startup
+  hooks actually ran.
+- **`off`**: the lifespan protocol is not run at all — the explicit escape hatch
+  for applications that crash or hang on lifespan scope.
+
+`lifespan.shutdown` is always attempted during `shutdown()` (unless `off` or the
+app was lifespan-less); every wait around the lifespan task is bounded, and a hung
+startup fails closed after a 10 s timeout. The per-request timeout is enforced
+with a cancellable deadline around the stream.
 
 ## Comparison semantics
 
@@ -160,6 +177,7 @@ userinfo, credential-shaped substrings) before display.
 | 10 | WSGI adapter re-encodes PATH_INFO per PEP 3333 | httpx's WSGITransport violates the spec; without the fix, Werkzeug mangles non-ASCII path params |
 | 11 | `connection` in the default ignored headers | Hop-by-hop transport header; not application behavior |
 | 12 | Config normalization: absent `ignored_headers` keeps built-in defaults; explicit value replaces | Omitting a key must not silently re-enable transport-header diffs |
+| 13 | In-process deadlines: WSGI waits on a detached daemon thread, ASGI cancels its stream; ASGI lifespan policy `auto`/`required`/`off` | A hung handler or lifespan task must never hang the run, and startup errors must never be concealed as "lifespan-less" |
 
 ## Resource lifecycle
 

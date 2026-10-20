@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -163,6 +164,17 @@ def _error_snapshot(kind: ErrorKind, message: str, started: float) -> ResponseSn
         transport_error=message,
         error_kind=kind,
     )
+
+
+def _request_deadline(kwargs: Mapping[str, Any]) -> float | None:
+    """Per-request timeout from prepared kwargs (case > target > run default).
+
+    ``None`` means "no usable positive timeout" (unbounded request).
+    """
+    raw = kwargs.get("timeout")
+    if isinstance(raw, int | float) and not isinstance(raw, bool) and raw > 0:
+        return float(raw)
+    return None
 
 
 def _ms_since(started: float) -> float:

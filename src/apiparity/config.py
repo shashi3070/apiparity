@@ -21,6 +21,7 @@ import yaml
 from apiparity.exceptions import ConfigError
 from apiparity.models import (
     AppConfig,
+    LifespanMode,
     NormalizationConfig,
     RedactionConfig,
     ReportingConfig,
@@ -58,7 +59,16 @@ _NORMALIZATION_KEYS = {"ignored_headers", "ignored_json_pointers", "whitespace",
 _WHITESPACE_KEYS = {"text"}
 _REDACTION_KEYS = {"sensitive_headers", "sensitive_json_pointers", "header_name_substrings"}
 _REPORTING_KEYS = {"json", "junit_xml", "terminal", "include_body_previews"}
-_TARGET_KEYS = {"kind", "url", "app", "factory", "verify_tls", "timeout_seconds", "label"}
+_TARGET_KEYS = {
+    "kind",
+    "url",
+    "app",
+    "factory",
+    "verify_tls",
+    "timeout_seconds",
+    "lifespan",
+    "label",
+}
 _TARGET_SIDES = {"old", "new"}
 
 _APP_SPEC_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$")
@@ -372,6 +382,22 @@ def _build_target(raw: Any, *, location: str, side: str) -> TargetConfig:
         if "timeout_seconds" in raw
         else None
     )
+    if "lifespan" in raw:
+        if kind != "asgi":
+            raise ConfigError(f"{location}.lifespan only applies to kind 'asgi'")
+        lifespan = raw["lifespan"]
+        if lifespan not in ("auto", "required", "off"):
+            hint = (
+                " — quote it: YAML parses unquoted `off`/`on` as booleans"
+                if isinstance(lifespan, bool)
+                else ""
+            )
+            raise ConfigError(
+                f"{location}.lifespan must be one of 'auto', 'required', 'off', "
+                f"got {lifespan!r}{hint}"
+            )
+    else:
+        lifespan = "auto"
     label = raw.get("label", side)
     if not isinstance(label, str) or not label:
         raise ConfigError(f"{location}.label must be a non-empty string")
@@ -382,6 +408,7 @@ def _build_target(raw: Any, *, location: str, side: str) -> TargetConfig:
         factory=factory,
         verify_tls=verify_tls,
         timeout_seconds=timeout,
+        lifespan=cast("LifespanMode", lifespan),
         label=label,
     )
 

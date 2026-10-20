@@ -59,7 +59,7 @@ In-process (WSGI/ASGI) targets are exempt: they never cross a network.
 | Guarantee | Detail |
 |---|---|
 | TLS verification on | `verify_tls: true` default; opt-out only via explicit config |
-| Timeouts on every HTTP request | Case → target → corpus → 30 s built-in fallback |
+| Timeouts on every request | Case → target → corpus → 10 s built-in fallback; enforced for in-process targets too (ASGI: stream cancelled at the deadline; WSGI: the run stops waiting and the handler thread is abandoned) |
 | No redirects | `follow_redirects: false` everywhere by default; a 3xx is compared as a response |
 | No retries | Failed requests fail once; write traffic is never re-sent |
 | Response size limit | Default 5 MiB; oversize bodies truncated + flagged, never silently matched |
@@ -81,7 +81,12 @@ apiparity process**:
   third-party APIs — exactly as it would under any test client.
 - WSGI apps run on worker threads (no network boundary); ASGI lifespan startup hooks
   run. Startup failure fails the run (`TargetInitError`, exit 2) — there is no
-  "continue without startup" fallback.
+  "continue without startup" fallback. A lifespan task that *raises* during startup
+  is reported as a failure too; apps that cannot handle lifespan scope need
+  `lifespan: "off"` on that target.
+- A WSGI handler that exceeds its timeout is **abandoned, not interrupted**: the
+  case fails with `error_kind: timeout`, but the handler thread keeps running until
+  your code returns. apiparity cannot kill in-process code.
 
 Point fixture targets at test configuration (test databases, fake credentials,
 `ENVIRONMENT=test`). apiparity does not sandbox your code.

@@ -11,7 +11,13 @@ from apiparity.config import load_config_text
 from apiparity.corpus import load_corpus
 from apiparity.exceptions import ConfigError, CorpusError, SafetyError, TargetInitError
 from apiparity.models import AppConfig, CaseResult, TargetConfig
-from apiparity.runner import _merge_normalization, compare_sync, compute_exit_code, run_comparison
+from apiparity.runner import (
+    _effective_follow_redirects,
+    _merge_normalization,
+    compare_sync,
+    compute_exit_code,
+    run_comparison,
+)
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -140,3 +146,62 @@ class TestCompareSyncApi:
         )
         assert [item[0] for item in seen] == [case.case_id for case in result.cases]
         assert all(item[2] == result.summary.total for item in seen)
+
+
+def _defaults_corpus(tmp_path: Path, follow_redirects: bool) -> Path:
+    return _corpus(
+        tmp_path,
+        "version: 1\n"
+        f"defaults: {{follow_redirects: {'true' if follow_redirects else 'false'}}}\n"
+        "cases: [{id: a, method: GET, path: /a, enabled: false}]\n",
+    )
+
+
+class TestEffectiveFollowRedirects:
+    """Config-file value must win by *identity*, not by truthiness (audit #3)."""
+
+    def test_config_false_beats_corpus_true(self, tmp_path: Path) -> None:
+        config = load_config_text("version: 1\ndefaults: {follow_redirects: false}\n")
+        corpus = load_corpus(_defaults_corpus(tmp_path, True))
+        assert _effective_follow_redirects(config, corpus) is False
+
+    def test_config_true_beats_corpus_false(self, tmp_path: Path) -> None:
+        config = load_config_text("version: 1\ndefaults: {follow_redirects: true}\n")
+        corpus = load_corpus(_defaults_corpus(tmp_path, False))
+        assert _effective_follow_redirects(config, corpus) is True
+
+    def test_corpus_value_used_when_config_absent(self, tmp_path: Path) -> None:
+        config = load_config_text("version: 1\n")
+        corpus = load_corpus(_defaults_corpus(tmp_path, True))
+        assert _effective_follow_redirects(config, corpus) is True
+
+    def test_default_is_false_everywhere(self, tmp_path: Path) -> None:
+        config = load_config_text("version: 1\n")
+        corpus = load_corpus(
+            _corpus(tmp_path, "version: 1\ncases: [{id: a, method: GET, path: /a}]\n")
+        )
+        assert _effective_follow_redirects(config, corpus) is False
+
+    def test_config_false_reaches_both_targets(self, tmp_path: Path, monkeypatch) -> None:
+        """End-to-end: explicit False in the config survives resolve_target."""
+        import apiparity.runner as runner_module
+
+        config = load_config_text(
+            "version: 1\n"
+            "defaults: {follow_redirects: false}\n"
+            "targets:\n"
+            "  old: {url: 'http://127.0.0.1:9'}\n"
+            "  new: {url: 'http://127.0.0.1:9'}\n"
+        )
+        corpus = load_corpus(_defaults_corpus(tmp_path, True))
+        captured: list[bool] = []
+        original = runner_module.resolve_target
+
+        def spy(cfg, **kwargs):  # type: ignore[no-untyped-def]
+            captured.append(bool(kwargs["follow_redirects"]))
+            return original(cfg, **kwargs)
+
+        monkeypatch.setattr(runner_module, "resolve_target", spy)
+        result = asyncio.run(run_comparison(corpus=corpus, config=config))
+        assert result.summary.exit_code == 0  # the single case is disabled
+        assert captured == [False, False]

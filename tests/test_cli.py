@@ -221,6 +221,44 @@ def test_bad_app_spec_is_exit_2() -> None:
     assert rc == EXIT_ERROR
 
 
+def test_lifespan_requires_app() -> None:
+    rc = main(
+        [
+            "validate",
+            "--corpus",
+            EQUIVALENT,
+            "--old-url",
+            "http://127.0.0.1:9",
+            "--old-lifespan",
+            "off",
+        ]
+    )
+    assert rc == EXIT_ERROR
+
+
+def test_lifespan_rejected_for_non_asgi_kind() -> None:
+    rc = main(
+        [
+            "validate",
+            "--corpus",
+            EQUIVALENT,
+            "--old-app",
+            OLD_APP,
+            "--old-kind",
+            "wsgi",
+            "--old-lifespan",
+            "off",
+        ]
+    )
+    assert rc == EXIT_ERROR
+
+
+def test_lifespan_accepted_with_asgi_app(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["validate", "--corpus", EQUIVALENT, *_app_args(), "--new-lifespan", "off"])
+    assert rc == EXIT_OK
+    assert "corpus OK" in capsys.readouterr().out
+
+
 def test_unknown_module_is_exit_2(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     # validate never imports the app (that happens at compare startup),
     # so the unknown-module failure surfaces on compare with exit 2.

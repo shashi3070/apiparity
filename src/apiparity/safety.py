@@ -19,8 +19,8 @@ from urllib.parse import urlsplit
 
 from apiparity.exceptions import SafetyError
 from apiparity.models import (
-    IDEMPOTENT_METHODS,
     KNOWN_METHODS,
+    SAFE_METHODS,
     RequestCase,
     SafetyConfig,
     TargetConfig,
@@ -34,7 +34,7 @@ __all__ = [
     "mutating_methods_in",
 ]
 
-MUTATING_METHODS: frozenset[str] = frozenset(KNOWN_METHODS - IDEMPOTENT_METHODS)
+MUTATING_METHODS: frozenset[str] = frozenset(KNOWN_METHODS - SAFE_METHODS)
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class SafetyReport:
 
 
 def mutating_methods_in(cases: Sequence[RequestCase]) -> set[str]:
-    return {case.method for case in cases if case.enabled and case.method not in IDEMPOTENT_METHODS}
+    return {case.method for case in cases if case.enabled and case.method not in SAFE_METHODS}
 
 
 def is_loopback_url(url: str) -> bool:

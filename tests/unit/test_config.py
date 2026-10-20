@@ -143,6 +143,34 @@ class TestConfigRejections:
             ({"version": 1, "targets": {"old": {"kind": "http", "app": "a:b"}}}, "not valid"),
             ({"version": 1, "targets": {"old": {"kind": "asgi", "url": "http://x"}}}, "not valid"),
             ({"version": 1, "targets": {"middle": {}}}, "unknown field"),
+            (
+                {
+                    "version": 1,
+                    "targets": {"new": {"kind": "wsgi", "app": "a:b", "lifespan": "off"}},
+                },
+                "lifespan only applies",
+            ),
+            (
+                {
+                    "version": 1,
+                    "targets": {"new": {"kind": "http", "url": "http://x", "lifespan": "off"}},
+                },
+                "lifespan only applies",
+            ),
+            (
+                {
+                    "version": 1,
+                    "targets": {"new": {"kind": "asgi", "app": "a:b", "lifespan": "sometimes"}},
+                },
+                "lifespan must be one of",
+            ),
+            (
+                {
+                    "version": 1,
+                    "targets": {"new": {"kind": "asgi", "app": "a:b", "lifespan": False}},
+                },
+                "quote it",
+            ),
             ({"version": 1, "normalization": {"ignored_json_pointers": ["bad"]}}, "JSON Pointer"),
             ({"version": 1, "normalization": {"array_order": {"/x": "rotate"}}}, "preserve"),
         ],
@@ -175,6 +203,22 @@ class TestTargetDescriptions:
     def test_app_description_with_factory(self) -> None:
         target = TargetConfig(kind="wsgi", app="legacy_flask.app:app", factory=True)
         assert target.describe() == "wsgi:legacy_flask.app:app (factory)"
+
+
+class TestTargetLifespan:
+    def test_asgi_lifespan_modes_parse(self) -> None:
+        for mode in ("auto", "required", "off"):
+            config = load_config_text(
+                "version: 1\n"
+                f"targets: {{new: {{kind: asgi, app: 'pkg.mod:app', lifespan: '{mode}'}}}}\n"
+            )
+            assert config.new_target is not None
+            assert config.new_target.lifespan == mode
+
+    def test_default_lifespan_is_auto(self) -> None:
+        config = load_config_text("version: 1\ntargets: {new: {kind: asgi, app: 'pkg.mod:app'}}\n")
+        assert config.new_target is not None
+        assert config.new_target.lifespan == "auto"
 
 
 class TestMergePrecedence:

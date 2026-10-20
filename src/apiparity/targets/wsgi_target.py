@@ -1,20 +1,29 @@
 """In-process WSGI target — runs an imported application (e.g. Flask) without a server.
 
 httpx's :class:`WSGITransport` is a *synchronous* transport, so each request is
-executed on a worker thread via :func:`asyncio.to_thread`; the corpus stays
-sequential, so only one thread is ever active per target.
+executed on a dedicated daemon thread; the corpus stays sequential, so only one
+thread is ever active per target. The per-request timeout is enforced on the
+event loop: a handler that never returns is abandoned at the deadline (its
+thread cannot be interrupted — see ``docs/safety.md``).
 """
 
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from apiparity.models import ResponseSnapshot, TargetConfig
-from apiparity.targets.base import Target, _build_snapshot, read_capped_sync
+from apiparity.targets.base import (
+    Target,
+    _build_snapshot,
+    _error_snapshot,
+    _request_deadline,
+    read_capped_sync,
+)
 
 __all__ = ["WsgiTarget"]
 
@@ -82,10 +91,54 @@ class WsgiTarget(Target):
     ) -> ResponseSnapshot:
         if self._client is None:  # pragma: no cover — lifecycle misuse guard
             raise RuntimeError("target used before startup()")
-        # Local transports cannot enforce network timeouts; the application itself
-        # is trusted (documented in docs/safety.md).
+        # WSGITransport cannot enforce network timeouts itself, so the
+        # per-request timeout (case override > target config > run default) is
+        # enforced here. The handler runs on a *daemon* thread that asyncio
+        # does not own: at the deadline this coroutine stops waiting and the
+        # thread is abandoned (a handler that never returns cannot block the
+        # run or process exit; any response it eventually produces is dropped).
+        # NOTE: asyncio.wait_for(asyncio.to_thread(...)) would NOT work here —
+        # it waits for an un-cancellable executor future instead of firing.
+        deadline = _request_deadline(kwargs)
         kwargs.pop("timeout", None)
-        return await asyncio.to_thread(self._send_sync, method, url, kwargs, started)
+
+        loop = asyncio.get_running_loop()
+        finished = asyncio.Event()
+        snapshot: ResponseSnapshot | None = None
+        error: Exception | None = None
+
+        def worker() -> None:
+            nonlocal snapshot, error
+            try:
+                snapshot = self._send_sync(method, url, kwargs, started)
+            except Exception as exc:
+                error = exc
+            finally:
+                try:
+                    loop.call_soon_threadsafe(finished.set)
+                except RuntimeError:
+                    pass  # event loop already closed; nobody is waiting anymore
+
+        threading.Thread(
+            target=worker, name=f"apiparity-wsgi-request-{self.side}", daemon=True
+        ).start()
+        if deadline is not None:
+            try:
+                await asyncio.wait_for(finished.wait(), timeout=deadline)
+            except TimeoutError:
+                return _error_snapshot(
+                    "timeout",
+                    f"in-process WSGI handler exceeded the {deadline:g}s request timeout "
+                    "(the handler thread cannot be interrupted and may still be running)",
+                    started,
+                )
+        else:
+            await finished.wait()
+        if error is not None:
+            raise error
+        if snapshot is None:  # pragma: no cover — worker exits with a result or error
+            raise RuntimeError("WSGI worker thread finished without a result")
+        return snapshot
 
     def _send_sync(
         self,

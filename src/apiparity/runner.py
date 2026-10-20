@@ -72,6 +72,21 @@ def _merge_normalization(config: AppConfig, corpus: Corpus) -> NormalizationConf
     )
 
 
+def _effective_follow_redirects(config: AppConfig, corpus: Corpus) -> bool:
+    """Config file wins over corpus defaults; absent everywhere → False.
+
+    Explicit ``False`` must not be overridden by a truthy corpus default
+    (the old ``bool(a or b)`` form made ``follow_redirects: false`` in the
+    config file lose to ``follow_redirects: true`` in the corpus).
+    """
+    if config.follow_redirects is not None:
+        return bool(config.follow_redirects)
+    corpus_value = corpus.defaults.get("follow_redirects")
+    if corpus_value is not None:
+        return bool(corpus_value)
+    return False
+
+
 async def run_comparison(
     *,
     corpus: Corpus,
@@ -110,7 +125,7 @@ async def run_comparison(
         baseline_cfg,
         side="baseline",
         size_limit=comparison.response_size_limit_bytes,
-        follow_redirects=bool(config.follow_redirects or corpus.defaults.get("follow_redirects")),
+        follow_redirects=_effective_follow_redirects(config, corpus),
         corpus_dir=corpus.directory,
         default_timeout=config.effective_timeout(corpus.defaults),
     )
@@ -118,7 +133,7 @@ async def run_comparison(
         candidate_cfg,
         side="candidate",
         size_limit=comparison.response_size_limit_bytes,
-        follow_redirects=bool(config.follow_redirects or corpus.defaults.get("follow_redirects")),
+        follow_redirects=_effective_follow_redirects(config, corpus),
         corpus_dir=corpus.directory,
         default_timeout=config.effective_timeout(corpus.defaults),
     )

@@ -20,13 +20,13 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from apiparity import __version__
 from apiparity.config import _APP_SPEC_RE, load_config_file, merge_cli_over_file
 from apiparity.corpus import load_corpus
 from apiparity.exceptions import ApiParityError, ConfigError
-from apiparity.models import AppConfig, CaseResult, TargetConfig
+from apiparity.models import AppConfig, CaseResult, LifespanMode, TargetConfig, TargetKind
 from apiparity.redaction import sanitize_exception_message
 from apiparity.reports import render_terminal, write_reports
 from apiparity.runner import run_comparison
@@ -151,6 +151,20 @@ def _add_target_arguments(parser: argparse.ArgumentParser) -> None:
         "--new-factory",
         action="store_true",
         help="call the object referenced by --new-app as an application factory",
+    )
+    parser.add_argument(
+        "--old-lifespan",
+        choices=("auto", "required", "off"),
+        help=(
+            "baseline ASGI lifespan policy: auto = skip lifespan-less apps but fail on "
+            "startup errors, required = demand a lifespan protocol, off = never run it "
+            "(default: auto; only with --old-kind asgi)"
+        ),
+    )
+    parser.add_argument(
+        "--new-lifespan",
+        choices=("auto", "required", "off"),
+        help=("candidate ASGI lifespan policy (default: auto; only with --new-kind asgi)"),
     )
 
 
@@ -304,6 +318,7 @@ def _resolve_side_target(args: argparse.Namespace, side: str) -> TargetConfig | 
     app: str | None = getattr(args, f"{side}_app")
     kind: str | None = getattr(args, f"{side}_kind")
     factory: bool = bool(getattr(args, f"{side}_factory"))
+    lifespan: str | None = getattr(args, f"{side}_lifespan")
     label = "baseline" if side == "old" else "candidate"
 
     if url and app:
@@ -313,6 +328,8 @@ def _resolve_side_target(args: argparse.Namespace, side: str) -> TargetConfig | 
             raise ConfigError(f"--{side}-kind requires --{side}-url or --{side}-app")
         if factory:
             raise ConfigError(f"--{side}-factory requires --{side}-app")
+        if lifespan is not None:
+            raise ConfigError(f"--{side}-lifespan requires --{side}-app")
         return None
 
     if url:
@@ -323,6 +340,8 @@ def _resolve_side_target(args: argparse.Namespace, side: str) -> TargetConfig | 
             )
         if factory:
             raise ConfigError(f"--{side}-factory only applies to --{side}-app targets")
+        if lifespan is not None:
+            raise ConfigError(f"--{side}-lifespan only applies to --{side}-app targets")
         return TargetConfig(kind="http", url=url, verify_tls=True, label=label)
 
     assert app is not None
@@ -335,7 +354,15 @@ def _resolve_side_target(args: argparse.Namespace, side: str) -> TargetConfig | 
         raise ConfigError(f"--{side}-kind http requires --{side}-url instead of --{side}-app")
     if not _APP_SPEC_RE.match(app):
         raise ConfigError(f"--{side}-app must look like 'package.module:attribute', got {app!r}")
-    return TargetConfig(kind=kind, app=app, factory=factory, label=label)  # type: ignore[arg-type]
+    if lifespan is not None and kind != "asgi":
+        raise ConfigError(f"--{side}-lifespan only applies to --{side}-kind asgi")
+    return TargetConfig(
+        kind=cast(TargetKind, kind),
+        app=app,
+        factory=factory,
+        lifespan=cast(LifespanMode, lifespan or "auto"),
+        label=label,
+    )
 
 
 def _progress_printer() -> Callable[[CaseResult, int, int], None]:

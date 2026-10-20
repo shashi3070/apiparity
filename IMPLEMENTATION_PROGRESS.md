@@ -226,5 +226,34 @@ ruff format, mypy (strict) clean; coverage gates met (comparison 94%, safety 93%
 sdist+wheel build; wheel installs and runs in a clean venv outside the checkout;
 E2E acceptance passes (equivalent → 0, mutated → 1 with exact pointer, reports parse,
 no secret leakage); full documentation set (README, five docs pages, SECURITY,
-CONTRIBUTING, CHANGELOG) and CI workflow delivered. Nothing published or committed
-(workspace is not a git repo; no PyPI upload) per authorization rules.
+CONTRIBUTING, CHANGELOG) and CI workflow delivered. Published to PyPI as
+**apiparity-check 0.1.0** (bare name taken) and pushed to
+https://github.com/shashi3070/apiparity (commits `17c114d`, `b2bf9b0`).
+
+## Post-0.1.0 audit fixes (2026-10-20)
+
+External review found five issues; all fixed (PyPI 0.1.0 is immutable → ship as 0.1.1):
+
+| # | Finding | Fix | Tests |
+|---|---|---|---|
+| 1 | CI red: ruff 0.17 reformats Python blocks in Markdown → `ruff format --check .` failed on `REQUIREMENTS.md` (CI installs latest ruff; local was 0.15.13) | Ran `ruff format .` (REQUIREMENTS.md now stable under 0.17); pinned dev extras `ruff>=0.15,<0.18`, `mypy>=1.10,<2.2` so CI matches | full gate re-run below |
+| 2 | ASGI lifespan semantics: a lifespan task dying with an exception was concealed as "app doesn't support lifespan" (startup errors never surfaced); no escape hatch for apps that crash/hang on lifespan scope; no policy control | `TargetConfig.lifespan` = `auto`\|`required`\|`off` (default `auto`), config `targets.<side>.lifespan`, CLI `--old-lifespan`/`--new-lifespan`; `auto` fails closed on `startup.failed` **and** uncaught lifespan-task exceptions, `required` also demands a startup message, `off` skips the protocol; all lifespan waits bounded via cancel + `asyncio.wait` | `tests/integration/test_lifespan.py` (9), config/CLI unit tests |
+| 3 | Redirect precedence: explicit `follow_redirects: false` in config was overridden by truthy corpus default (truthiness-based resolution) | `runner._effective_follow_redirects` — identity-based: config value (if not None) → corpus value (if not None) → `False` | `TestEffectiveFollowRedirects` (5) |
+| 4 | Docs: REQUIREMENTS §20 said PyPI name `apiparity` (rejected) | §20 notes distribution name **`apiparity-check`**, import/CLI unchanged | doc-only |
+| 5 | Docs: `IDEMPOTENT_METHODS` was renamed to `SAFE_METHODS` but docs/§ refs lagged | `models.py` + `safety.py` renamed with doc comment; docs/REQUIREMENTS updated | mypy/ruff clean |
+| — | **(also found while fixing #2)** in-process timeouts were unenforced: `asyncio.wait_for(asyncio.to_thread(...))` does not bound a running thread → a hung WSGI/ASGI handler hung the run | WSGI: detached daemon thread + event + `loop.call_soon_threadsafe`; ASGI: cancellable `asyncio.wait_for` around the stream; deadline = case → target → run default; thread abandoned at deadline (daemon ⇒ cannot block exit) | `tests/integration/test_inprocess_timeouts.py` (4) |
+
+Docs updated in the same pass: architecture (WSGI deadline design, lifespan modes,
+ADR 13), safety (10 s fallback + thread-abandon fine print), troubleshooting
+(in-process timeouts fire now; lifespan modes), configuration (`lifespan` key +
+YAML-quoting rule + CLI↔config map), README (target table + sample), REQUIREMENTS
+(§9.2/§9.3/§14), CHANGELOG `## [Unreleased]`.
+
+### Audit-fix gate results
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-10-20 | `ruff check .` | All checks passed |
+| 2026-10-20 | `ruff format --check .` | 58 files already formatted (incl. ruff-0.17 Markdown blocks) |
+| 2026-10-20 | `mypy src` | Success: no issues found (23 files, strict) |
+| 2026-10-20 | `pytest -q --cov=apiparity` | **345 passed** (+27 new); total **90%** — comparison 94%, safety 93%, runner 93%, asgi_target 92%, config 91% |

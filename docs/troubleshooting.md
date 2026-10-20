@@ -72,7 +72,12 @@ ASGI lifespan startup failed: ...
 
 Your app's `lifespan`/startup handler raised. apiparity fails closed — it will not
 run requests against an app that failed its own startup. Read the chained message
-(missing env var, unreachable DB, ...). Apps that don't implement lifespan are fine.
+(missing env var, unreachable DB, ...). A lifespan task that dies with an exception
+is reported the same way — it is never mistaken for an app that simply doesn't
+implement lifespan. Apps that genuinely don't implement lifespan keep working under
+the default `lifespan: "auto"`; apps that crash or hang on lifespan scope need
+`lifespan: "off"` on that target, and `lifespan: "required"` turns a missing
+lifespan protocol into a hard error.
 
 ### `CorpusError` / `ConfigError` / schema violations
 
@@ -173,9 +178,11 @@ in-process targets share the machine with the runner; local servers share the OS
 - **Non-ASCII path parameters**: the WSGI adapter re-encodes PATH_INFO per PEP 3333
   (ADR in [architecture.md](architecture.md)). If you see mojibake in paths, that's a
   bug — please report it.
-- **Timeouts don't fire for in-process targets.** Local transports have no network
-  boundary; a hung WSGI endpoint hangs the run (Ctrl+C to abort). This is documented
-  behavior, not a misconfiguration.
+- **Timeouts now fire for in-process targets, with a caveat.** Both WSGI and ASGI
+  handlers are bounded by `timeout_seconds`: a hung endpoint produces a
+  `timeout`-classified failure instead of stalling the run. For WSGI the handler
+  *thread* cannot be interrupted — it is abandoned at the deadline and keeps
+  running until your code returns (its response, if any, is discarded).
 
 ## Report files missing
 

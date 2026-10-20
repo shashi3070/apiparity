@@ -314,7 +314,9 @@ targets:
 
 - Import via `loader.import_app`; if `--*-factory`, call the imported object to obtain the app.
   Non-factory: use attribute directly; if it's callable returning an app only under `--factory`.
-- Transport: `httpx.WSGITransport(app=...)` (runs in a worker thread internally — acceptable).
+- Transport: `httpx.WSGITransport(app=...)` dispatched to a dedicated daemon thread; the
+  per-request timeout is enforced on the event loop — a handler that never returns is
+  abandoned at the deadline (it cannot be interrupted).
 - Never fall back to HTTP/ASGI on failure.
 
 ### 9.3 ASGI target (`--new-kind asgi`)
@@ -324,8 +326,15 @@ targets:
   run `app({"type":"lifespan"}, receive, send)` as a task, await `startup` message (or
   `lifespan.startup.failed` → `TargetInitError`), and always send `lifespan.shutdown` in
   `shutdown()`, awaiting completion. Test the startup-failure path.
-- Handle apps without lifespan support gracefully (timeout + treat missing handshake as
-  "no lifespan" only if the app closes without responding — document behavior).
+- Handle apps without lifespan support gracefully, governed by the per-target lifespan
+  policy `targets.<side>.lifespan` (CLI `--old-lifespan`/`--new-lifespan`), one of
+  `auto` (default) / `required` / `off`:
+  - `auto`: a lifespan task that closes cleanly without responding → "no lifespan";
+    `lifespan.startup.failed` **or an uncaught exception in the lifespan task** →
+    `TargetInitError` (startup errors are never concealed);
+  - `required`: additionally fails when no startup message ever arrives;
+  - `off`: the protocol is not run at all (apps that crash/hang on lifespan scope);
+  - startup timeout → `TargetInitError`; every wait around the lifespan task is bounded.
 
 ### 9.4 Loader rules
 
@@ -430,7 +439,8 @@ apiparity --version
 apiparity validate --corpus examples/requests.yaml [--config ...]
 apiparity compare  --corpus ... [--config ...] [--old-url U | --old-app S] [--new-url U |
                    --new-app S] [--old-kind http|wsgi|asgi] [--new-kind ...] [--old-factory]
-                   [--new-factory] [--output DIR] [--allow-mutating-requests]
+                   [--new-factory] [--old-lifespan auto|required|off]
+                   [--new-lifespan ...] [--output DIR] [--allow-mutating-requests]
                    [--allow-remote-targets] [--verbose] [--quiet]
 ```
 
@@ -440,7 +450,8 @@ apiparity compare  --corpus ... [--config ...] [--old-url U | --old-app S] [--ne
 ### 14.2 Flags (all must exist; documented in `--help` and README)
 
 `--corpus`, `--config`, `--old-url`, `--new-url`, `--old-app`, `--new-app`, `--old-kind`,
-`--new-kind`, `--old-factory`, `--new-factory`, `--output`, `--allow-mutating-requests`,
+`--new-kind`, `--old-factory`, `--new-factory`, `--old-lifespan`, `--new-lifespan`,
+`--output`, `--allow-mutating-requests`,
 `--allow-remote-targets`, `--verbose`, `--quiet`, `--version`.
 
 ### 14.3 Exit codes (exact contract)
@@ -498,8 +509,9 @@ write raw/unredacted response bodies to disk by default.
 from apiparity import AppConfig, ComparisonConfig, compare, compare_sync, RunResult
 
 config = AppConfig.from_file("apiparity.yaml")
-result = await compare(corpus="examples/requests.yaml", config=config,
-                       old_target=..., new_target=...)
+result = await compare(
+    corpus="examples/requests.yaml", config=config, old_target=..., new_target=...
+)
 # or: result = compare_sync(...)  # synchronous convenience wrapper
 print(result.summary.matched, result.cases[0].differences)
 ```
@@ -649,8 +661,11 @@ python -m build         # sdist + wheel succeed
 
 ## 20. Packaging & release readiness
 
-- `pyproject.toml`: setuptools ≥68 backend, `name = "apiparity"`, `version = "0.1.0"`
-  (**single authoritative version location** — define in `src/apiparity/__init__.py` via
+- `pyproject.toml`: setuptools ≥68 backend, `name = "apiparity-check"`, `version = "0.1.0"`
+  (**distribution name** on PyPI is `apiparity-check` because the bare name `apiparity` was
+  rejected as too similar to an existing project; the import package and the console script
+  remain `apiparity`). (**single authoritative version location** — define in
+  `src/apiparity/__init__.py` via
   `__version__` and reference dynamically, or in pyproject only with `__version__` read from
   metadata; pick one and document it), `requires-python = ">=3.11"`, deps
   `httpx>=0.27,<1`, `PyYAML>=6,<7`.

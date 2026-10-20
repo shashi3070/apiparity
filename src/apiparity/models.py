@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 TargetKind = Literal["http", "wsgi", "asgi"]
+LifespanMode = Literal["auto", "required", "off"]
 ErrorKind = Literal["none", "transport", "timeout", "decode", "too_large"]
 CaseStatus = Literal["match", "mismatch", "failed", "skipped"]
 Severity = Literal["error", "warning", "info"]
@@ -37,7 +38,10 @@ DifferenceCategory = Literal[
 
 KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"})
 
-IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+#: Methods replayable without the mutating opt-in (the HTTP "safe" set the
+#: safety guard treats as read-only; TRACE is excluded deliberately — it is
+#: never emitted by real clients and stays behind the opt-in).
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 @dataclass(frozen=True)
@@ -180,6 +184,7 @@ class TargetConfig:
     factory: bool = False
     verify_tls: bool = True
     timeout_seconds: float | None = None  # None → effective config/corpus default
+    lifespan: LifespanMode = "auto"  # ASGI only: lifespan policy (see asgi_target)
     label: str = "target"
 
     def describe(self) -> str:

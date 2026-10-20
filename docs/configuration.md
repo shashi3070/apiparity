@@ -70,13 +70,19 @@ targets:                         # optional — CLI --old-app/--old-url etc. ove
   new:
     kind: asgi
     app: "migrated_fastapi.app:app"
-```
+    lifespan: "auto"             # asgi only: "auto" | "required" | "off"
+  ```
 
 ### Rules that surprise people
 
 - **`timing: {mode: "off"}`** — bare `off` is YAML `false`, not the string. Always
   quote it: `mode: "off"`. (The failure mode: `mode: off` is rejected as an unknown
   type, loudly.)
+- **`lifespan: "off"`** — same YAML trap, same fix: quote it. Modes: `auto`
+  (default) skips lifespan-less apps but fails on any startup error (including a
+  lifespan task that raises); `required` demands a lifespan protocol; `off` never
+  runs it (escape hatch for apps that crash on lifespan scope). `lifespan` is
+  rejected on `kind: http`/`wsgi` targets.
 - **`normalization.ignored_headers`** — if the key is *absent*, the built-in defaults
   (`date`, `content-length`, `server`, `connection`) stay in effect. If the key is
   *present — even empty* — it **replaces** the defaults entirely (set
@@ -93,8 +99,8 @@ targets:                         # optional — CLI --old-app/--old-url etc. ove
 
 | Config path | CLI flag(s) |
 |---|---|
-| `targets.old.{kind,url,app,factory}` | `--old-app` / `--old-url` / `--old-kind` / `--old-factory` |
-| `targets.new.*` | `--new-app` / `--new-url` / `--new-kind` / `--new-factory` |
+| `targets.old.{kind,url,app,factory,lifespan}` | `--old-app` / `--old-url` / `--old-kind` / `--old-factory` / `--old-lifespan` |
+| `targets.new.*` | `--new-app` / `--new-url` / `--new-kind` / `--new-factory` / `--new-lifespan` |
 | `safety.allow_mutating_requests` | `--allow-mutating-requests` |
 | `safety.allow_remote_targets` | `--allow-remote-targets` |
 | `comparison.*` | `--compare-status/--no-compare-status` etc., `--max-differences`, `--response-size-limit`, `--timing-mode`, `--timing-max-ms` |
