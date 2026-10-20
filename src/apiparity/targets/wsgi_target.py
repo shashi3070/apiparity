@@ -49,6 +49,10 @@ def _fix_path_info(app: Any) -> Any:
 
 
 class WsgiTarget(Target):
+    #: A WSGI handler runs on a thread asyncio cannot interrupt: once a
+    #: request times out the target's state can no longer be trusted.
+    supports_cancellation = False
+
     def __init__(
         self,
         side: str,

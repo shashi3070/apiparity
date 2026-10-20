@@ -178,6 +178,8 @@ userinfo, credential-shaped substrings) before display.
 | 11 | `connection` in the default ignored headers | Hop-by-hop transport header; not application behavior |
 | 12 | Config normalization: absent `ignored_headers` keeps built-in defaults; explicit value replaces | Omitting a key must not silently re-enable transport-header diffs |
 | 13 | In-process deadlines: WSGI waits on a detached daemon thread, ASGI cancels its stream; ASGI lifespan policy `auto`/`required`/`off` | A hung handler or lifespan task must never hang the run, and startup errors must never be concealed as "lifespan-less" |
+| 14 | Quarantine: WSGI non-cancellable timeout or ASGI un-cancellable/loop-blocking timeout marks target quarantined; later requests refused locally (`request not sent`); redirect hops checked hop-by-hop (`RemoteGuardedTransport`) with redacted messages | Prevents re-entering a target with mutated in-process state and prevents redirect escape of the loopback policy |
+| 15 | Secret non-disclosure: redact URL userinfo + sensitive query params, headers/JSON by policy; httpx `json=None` cannot send explicit JSON null (send `b"null"` + `application/json`); corpus `json: null` tracked by presence (`has_json_body`) | Zero secrets in artifacts; explicit JSON null bodies reach the wire intact |
 
 ## Resource lifecycle
 

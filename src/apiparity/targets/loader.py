@@ -38,8 +38,13 @@ def resolve_target(
     follow_redirects: bool,
     corpus_dir: Path,
     default_timeout: float = 10.0,
+    allow_remote: bool = False,
 ) -> Target:
-    """Construct (but do not start) the target described by ``config``."""
+    """Construct (but do not start) the target described by ``config``.
+
+    ``allow_remote`` mirrors ``safety.allow_remote_targets``: it is the policy
+    the HTTP target applies to every request URL, including redirect hops.
+    """
     kind: TargetKind = config.kind
     if kind == "http":
         if not config.url:
@@ -55,6 +60,7 @@ def resolve_target(
             follow_redirects=follow_redirects,
             corpus_dir=corpus_dir,
             default_timeout=default_timeout,
+            allow_remote=allow_remote,
         )
 
     if kind in ("wsgi", "asgi"):

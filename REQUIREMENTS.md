@@ -22,8 +22,9 @@
   LLM patches are explicitly out of scope for MVP (see §20).
 - Comparison results must be **deterministic and reproducible**: no LLM calls anywhere in the
   core comparison engine.
-- Distribution name: `apiparity` (verified available on PyPI on 2026-10-20 — no existing
-  distribution). Re-verify before any public release.
+- Distribution name on PyPI: **`apiparity-check`** (the bare name `apiparity` is taken by an
+  unrelated existing project); the import package and CLI command are both `apiparity`.
+  Published and verified on PyPI on 2026-10-20.
 
 ### Primary use cases
 

@@ -15,7 +15,9 @@
 
 ## Environment facts (verified 2026-10-20)
 
-- PyPI name `apiparity`: **available** (`pip index versions apiparity` → no distribution).
+- PyPI name `apiparity`: **taken** by an unrelated distribution; published as
+  **`apiparity-check`** instead (import package and CLI remain `apiparity`).
+  Verified live on PyPI on 2026-10-20 (0.1.1).
 - Installed: python 3.11.3, httpx 0.28.1, PyYAML 6.0.3, fastapi 0.128.8, starlette 0.52.1,
   flask 3.1.3 (test-only, installed this session), pytest 9.0.3, pytest-cov 7.1.0,
   pytest-asyncio 1.4.0, ruff 0.15.13, mypy 2.1.0, build 1.5.0, coverage 7.14.0, uvicorn 0.49.0.

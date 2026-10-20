@@ -25,6 +25,7 @@ from apiparity.models import (
     SafetyConfig,
     TargetConfig,
 )
+from apiparity.redaction import redact_url
 
 __all__ = [
     "MUTATING_METHODS",
@@ -123,9 +124,11 @@ def evaluate_safety(
     for side, config in target_configs:
         if config.kind == "http":
             if config.url and is_loopback_url(config.url):
-                loopback.append(f"{side}: {config.url}")
+                loopback.append(f"{side}: {redact_url(config.url)}")
             else:
-                remote.append(f"{side}: {config.url or '<missing url>'}")
+                remote.append(
+                    f"{side}: {redact_url(config.url)}" if config.url else f"{side}: <missing url>"
+                )
         else:
             in_process.append(f"{side}: {config.kind}:{config.app}")
 

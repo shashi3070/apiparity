@@ -36,6 +36,10 @@ IN_PROCESS_HOST = "http://apiparity.local"
 class Target(ABC):
     """One implementation under test (baseline or candidate)."""
 
+    #: Whether a timed-out request can be trusted to have stopped (network and
+    #: cancellable async handlers: True; in-process WSGI threads: False).
+    supports_cancellation: bool = True
+
     def __init__(
         self,
         side: str,
@@ -52,11 +56,22 @@ class Target(ABC):
         self.follow_redirects = follow_redirects
         self.corpus_dir = corpus_dir
         self.default_timeout = default_timeout
+        self._quarantine_reason: str | None = None
 
     @property
     def effective_timeout(self) -> float:
         """Case override > per-target config > effective run default."""
         return self.config.timeout_seconds or self.default_timeout
+
+    @property
+    def quarantined(self) -> bool:
+        """True once an uninterruptible failure made this target unusable."""
+        return self._quarantine_reason is not None
+
+    def _quarantine(self, reason: str) -> None:
+        """Mark the target unusable; the first reason wins."""
+        if self._quarantine_reason is None:
+            self._quarantine_reason = reason
 
     # -- lifecycle ---------------------------------------------------------- #
 
@@ -74,12 +89,18 @@ class Target(ABC):
     # -- execution ---------------------------------------------------------- #
 
     async def execute(self, case: RequestCase) -> ResponseSnapshot:
+        if self._quarantine_reason is not None:
+            return _error_snapshot(
+                "transport",
+                f"request not sent: {self._quarantine_reason}",
+                time.perf_counter(),
+            )
         method, url, kwargs = self._prepare_request(case)
         started = time.perf_counter()
         try:
-            return await self._send_and_capture(method, url, kwargs, started)
+            snapshot = await self._send_and_capture(method, url, kwargs, started)
         except httpx.TimeoutException as exc:
-            return _error_snapshot(
+            snapshot = _error_snapshot(
                 "timeout",
                 sanitize_exception_message(f"{type(exc).__name__}: {exc}"),
                 started,
@@ -96,6 +117,14 @@ class Target(ABC):
                 sanitize_exception_message(f"{type(exc).__name__}: {exc}"),
                 started,
             )
+        if snapshot.error_kind == "timeout" and not self.supports_cancellation:
+            self._quarantine(
+                f"target quarantined after an uninterruptible timeout during case "
+                f"{case.id!r}: a handler thread may still be running and mutating "
+                "application state; no further requests were sent to this target "
+                "(hard cancellation requires process isolation)"
+            )
+        return snapshot
 
     @abstractmethod
     async def _send_and_capture(
@@ -122,8 +151,14 @@ class Target(ABC):
         if pairs:
             kwargs["params"] = pairs
 
-        if case.json_body is not None:
-            kwargs["json"] = case.json_body
+        if case.has_json_body:
+            if case.json_body is None:
+                # httpx cannot distinguish ``json=None`` from "no body"; an
+                # explicit JSON null is sent as the literal bytes.
+                kwargs["content"] = b"null"
+                _ensure_json_content_type(kwargs["headers"])
+            else:
+                kwargs["json"] = case.json_body
         elif case.data is not None:
             kwargs["content"] = case.data.encode("utf-8")
 
@@ -175,6 +210,12 @@ def _request_deadline(kwargs: Mapping[str, Any]) -> float | None:
     if isinstance(raw, int | float) and not isinstance(raw, bool) and raw > 0:
         return float(raw)
     return None
+
+
+def _ensure_json_content_type(headers: dict[str, str]) -> None:
+    """Set ``application/json`` unless the case already chose a content type."""
+    if not any(name.lower() == "content-type" for name in headers):
+        headers["content-type"] = "application/json"
 
 
 def _ms_since(started: float) -> float:

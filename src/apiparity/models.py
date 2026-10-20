@@ -64,6 +64,9 @@ class RequestCase:
     query: dict[str, list[str]] = field(default_factory=dict)
     headers: dict[str, str] = field(default_factory=dict)
     json_body: Any | None = None
+    #: True when the corpus specified a ``json`` field — ``json: null`` is an
+    #: explicit JSON-null body, distinct from "no body at all".
+    has_json_body: bool = False
     data: str | None = None
     files: tuple[FileUpload, ...] = ()
     timeout_seconds: float | None = None
@@ -188,21 +191,15 @@ class TargetConfig:
     label: str = "target"
 
     def describe(self) -> str:
-        """Credential-free identifier used in reports."""
+        """Credential-free identifier used in reports (userinfo masked,
+        sensitive query-parameter values redacted)."""
         if self.kind == "http" and self.url:
-            return _strip_userinfo(self.url)
+            # Local import: apiparity.redaction imports models at module level.
+            from apiparity.redaction import redact_url
+
+            return redact_url(self.url)
         suffix = " (factory)" if self.factory else ""
         return f"{self.kind}:{self.app}{suffix}"
-
-
-def _strip_userinfo(url: str) -> str:
-    if "@" in url.split("://", 1)[-1].split("/", 1)[0]:
-        scheme, rest = url.split("://", 1)
-        hostpart = rest.split("/", 1)[0]
-        host = hostpart.rsplit("@", 1)[1]
-        tail = rest[len(hostpart) :]
-        return f"{scheme}://{host}{tail}"
-    return url
 
 
 @dataclass(frozen=True)

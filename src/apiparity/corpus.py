@@ -309,7 +309,14 @@ def _build_case(raw: dict[str, Any], *, location: str, defaults: dict[str, Any])
         raise CorpusError("'path' is required", location=f"{location}.path")
     _validate_path_shape(path, location=f"{location}.path")
 
-    body_keys = [key for key in _MUTUALLY_EXCLUSIVE_BODIES if raw.get(key) is not None]
+    def _body_present(key: str) -> bool:
+        # ``json`` uses field presence so that an explicit ``json: null`` body
+        # counts; data/files stay value-based (``null`` means "not specified").
+        if key == "json":
+            return key in raw
+        return raw.get(key) is not None
+
+    body_keys = [key for key in _MUTUALLY_EXCLUSIVE_BODIES if _body_present(key)]
     if len(body_keys) > 1:
         raise CorpusError(
             f"conflicting body representations: {', '.join(sorted(body_keys))} "
@@ -320,8 +327,9 @@ def _build_case(raw: dict[str, Any], *, location: str, defaults: dict[str, Any])
     query = _validate_query(raw.get("query", {}), location=f"{location}.query")
     headers = _validate_headers(raw.get("headers", {}), location=f"{location}.headers")
 
+    has_json_body = "json" in raw
     json_body = raw.get("json")
-    if json_body is not None:
+    if has_json_body:
         try:
             json.dumps(json_body)
         except (TypeError, ValueError) as exc:
@@ -362,6 +370,7 @@ def _build_case(raw: dict[str, Any], *, location: str, defaults: dict[str, Any])
         query=query,
         headers=headers,
         json_body=json_body,
+        has_json_body=has_json_body,
         data=data,
         files=files,
         timeout_seconds=timeout,
@@ -403,6 +412,7 @@ def _resolve_case(
         query=query,
         headers=headers,
         json_body=resolved["json"],
+        has_json_body=case.has_json_body,
         data=resolved["data"],
         files=files,
         timeout_seconds=case.timeout_seconds,

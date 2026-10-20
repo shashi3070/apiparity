@@ -59,15 +59,15 @@ In-process (WSGI/ASGI) targets are exempt: they never cross a network.
 | Guarantee | Detail |
 |---|---|
 | TLS verification on | `verify_tls: true` default; opt-out only via explicit config |
-| Timeouts on every request | Case → target → corpus → 10 s built-in fallback; enforced for in-process targets too (ASGI: stream cancelled at the deadline; WSGI: the run stops waiting and the handler thread is abandoned) |
-| No redirects | `follow_redirects: false` everywhere by default; a 3xx is compared as a response |
+| Timeouts on every request | Case → target → corpus → 10 s built-in fallback; enforced for in-process targets too (ASGI: stream cancelled at the deadline; WSGI: the run stops waiting and the handler thread is abandoned). A non-cancellable timeout (WSGI) quarantines the target; an ASGI handler that resists cancellation or blocks the event loop is also quarantined. Quarantined targets refuse later requests with `request not sent: target quarantined ...`. |
+| No redirects | `follow_redirects: false` everywhere by default; a 3xx is compared as a response. When following redirects, every hop is checked: a hop from a loopback target to a non-loopback host is refused (hop-by-hop) without `allow_remote_targets` (the remote host is never contacted). |
 | No retries | Failed requests fail once; write traffic is never re-sent |
 | Response size limit | Default 5 MiB; oversize bodies truncated + flagged, never silently matched |
 | No environment proxies | HTTP targets use `trust_env=False`; system/HTTP_PROXY cannot redirect or observe traffic |
 | No path escape | Multipart file paths must resolve inside the corpus directory |
 | No code execution from corpus content | Corpus/config are data; no `eval`, no shell, no template execution |
 | Malformed input fails first | All validation (corpus, config, variables, safety, target init) completes before case 1 |
-| Secrets never printed | Redaction of headers, JSON pointers, URL userinfo in reports, terminal, and exception messages |
+| Secrets never printed | Redaction of headers, JSON pointers, URL userinfo and sensitive query parameters in reports, terminal, and exception messages |
 | Failed run never exits 0 | Exit code derives only from a successfully produced `RunResult` |
 
 ## In-process targets: the honest fine print

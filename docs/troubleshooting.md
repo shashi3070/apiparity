@@ -22,8 +22,9 @@ that business logic differs.
 |---|---|---|---|
 | `status_code`, `json_*`, `header_*`, `text_body`, `binary_body` differences | Behavioral | `mismatch` | Real regression or intentional change |
 | `transport_error` with message about connect/refused/DNS | Infrastructure | `failed` | Server not running; wrong port; app didn't start |
-| `timeout` (or `httpx.ReadTimeout`-derived message) | Infrastructure | `failed` | Server hung; endpoint slower than `timeout_seconds` |
+| `timeout` (or `httpx.ReadTimeout`-derived message) | Infrastructure | `failed` | Server hung; endpoint slower than `timeout_seconds`; for in-process WSGI the handler thread may continue to run after the timeout (abandoned). |
 | `response_too_large` | Guard | never `match` | Body exceeded `response_size_limit_bytes` (default 5 MiB) |
+| `request not sent: target quarantined ...` | Guard | `failed` | A previous timeout left the target in an unsafe state (WSGI uninterruptible thread, or ASGI handler that resisted cancellation/blocked the event loop) — no further requests sent to this target. |
 
 **Fix order for `failed` cases:** (1) curl/wget the baseline URL yourself, (2) check
 the app logs, (3) raise `timeout_seconds` only after confirming the endpoint is just

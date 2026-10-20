@@ -171,6 +171,49 @@ cases:
         with pytest.raises(CorpusError, match="conflicting body"):
             load_corpus(_write(tmp_path, "c.yaml", text))
 
+    def test_explicit_json_null_still_conflicts_with_data(self, tmp_path: Path) -> None:
+        text = """
+version: 1
+cases:
+  - id: a
+    method: POST
+    path: /a
+    json: null
+    data: "raw"
+"""
+        with pytest.raises(CorpusError, match="conflicting body"):
+            load_corpus(_write(tmp_path, "c.yaml", text))
+
+    def test_explicit_json_null_is_a_body(self, tmp_path: Path) -> None:
+        text = "version: 1\ncases: [{id: a, method: POST, path: /a, json: null}]"
+        corpus = load_corpus(_write(tmp_path, "c.yaml", text))
+        case = corpus.cases[0]
+        assert case.has_json_body is True
+        assert case.json_body is None
+
+    @pytest.mark.parametrize(
+        ("snippet", "expected"),
+        [
+            ("", False),
+            (", json: null", True),
+            (", json: false", True),
+            (', json: ""', True),
+            (", json: {}", True),
+        ],
+    )
+    def test_json_body_presence_five_ways(
+        self, tmp_path: Path, snippet: str, expected: bool
+    ) -> None:
+        text = f"version: 1\ncases: [{{id: a, method: POST, path: /a{snippet}}}]"
+        corpus = load_corpus(_write(tmp_path, "c.yaml", text))
+        assert corpus.cases[0].has_json_body is expected
+
+    def test_json_null_survives_variable_resolution(self, tmp_path: Path) -> None:
+        text = "version: 1\ncases: [{id: a, method: POST, path: /a, json: null}]"
+        corpus = load_corpus(_write(tmp_path, "c.yaml", text), env={})
+        assert corpus.cases[0].has_json_body is True
+        assert corpus.cases[0].json_body is None
+
     @pytest.mark.parametrize("timeout", ["0", "-1", '"10"', "true"])
     def test_invalid_timeout(self, tmp_path: Path, timeout: str) -> None:
         text = f"version: 1\ncases: [{{id: a, method: GET, path: /a, timeout_seconds: {timeout}}}]"

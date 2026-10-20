@@ -200,6 +200,15 @@ class TestTargetDescriptions:
         target = TargetConfig(kind="http", url="http://127.0.0.1:5000/base")
         assert target.describe() == "http://127.0.0.1:5000/base"
 
+    def test_sensitive_query_parameters_redacted(self) -> None:
+        target = TargetConfig(
+            kind="http", url="https://api.example.com/v1?access_token=secret-value&x=1"
+        )
+        described = target.describe()
+        assert "secret-value" not in described
+        assert "[REDACTED]" in described
+        assert "x=1" in described
+
     def test_app_description_with_factory(self) -> None:
         target = TargetConfig(kind="wsgi", app="legacy_flask.app:app", factory=True)
         assert target.describe() == "wsgi:legacy_flask.app:app (factory)"

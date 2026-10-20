@@ -147,3 +147,55 @@ class TestEvaluateSafety:
         assert "ALLOWED" in text
         assert "cannot roll back" in text
         assert "in-process target" in text
+
+
+class TestUrlSecretRedaction:
+    """Target URLs must never reach summaries/messages with credentials intact."""
+
+    LOOPBACK_URL = "http://admin:hunter2@127.0.0.1:5000/api?access_token=secret-value&x=1"
+    REMOTE_URL = "http://admin:hunter2@example.invalid/api?access_token=secret-value"
+
+    def test_loopback_summary_masks_credentials(self) -> None:
+        report = evaluate_safety(
+            [case()],
+            [("baseline", TargetConfig(kind="http", url=self.LOOPBACK_URL))],
+            SafetyConfig(),
+        )
+        listed = report.loopback_targets[0]
+        for secret in ("hunter2", "admin", "secret-value"):
+            assert secret not in listed, f"secret {secret!r} leaked into safety summary"
+        assert "[REDACTED]" in listed
+        rendered = report.render()
+        for secret in ("hunter2", "admin", "secret-value"):
+            assert secret not in rendered
+
+    def test_remote_summary_masks_credentials_when_granted(self) -> None:
+        report = evaluate_safety(
+            [case()],
+            [("candidate", TargetConfig(kind="http", url=self.REMOTE_URL))],
+            SafetyConfig(allow_remote_targets=True),
+        )
+        listed = report.remote_targets[0]
+        for secret in ("hunter2", "admin", "secret-value"):
+            assert secret not in listed
+        for secret in ("hunter2", "admin", "secret-value"):
+            assert secret not in report.render()
+
+    def test_refusal_message_masks_credentials(self) -> None:
+        with pytest.raises(SafetyError) as excinfo:
+            evaluate_safety(
+                [case()],
+                [("candidate", TargetConfig(kind="http", url=self.REMOTE_URL))],
+                SafetyConfig(),
+            )
+        message = str(excinfo.value)
+        for secret in ("hunter2", "admin", "secret-value"):
+            assert secret not in message, f"secret {secret!r} leaked into SafetyError"
+
+    def test_non_sensitive_query_parameters_survive(self) -> None:
+        report = evaluate_safety(
+            [case()],
+            [("baseline", TargetConfig(kind="http", url="http://127.0.0.1:5000/api?x=1&y=2"))],
+            SafetyConfig(),
+        )
+        assert "?x=1&y=2" in report.loopback_targets[0]

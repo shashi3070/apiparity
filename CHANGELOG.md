@@ -4,6 +4,41 @@ All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- URL credentials no longer leak into safety summaries: the pre-run safety report
+  (`! SAFETY: ...`), `SafetyError` refusal messages, and the runner metadata
+  (`normalization_rules_applied.safety`) now list targets through `redact_url()` —
+  userinfo is stripped and credential-shaped query values are masked
+  (`?access_token=x` → `?access_token=[REDACTED]`), matching `TargetConfig.describe()`.
+- Explicit JSON `null` bodies are actually sent: httpx cannot distinguish
+  `json=None` from "no body", so a corpus `json: null` (presence, not value, is
+  authoritative) is transmitted as the literal bytes `b"null"` with an
+  `application/json` content type. Body presence is now tracked per case
+  (`RequestCase.has_json_body`) through parsing, variable resolution, and request
+  preparation, so `json: null`, `json: false`, `json: ""`, and `json: {}` all
+  reach the wire instead of being silently dropped.
+- Redirect hops can no longer escape the loopback policy: a loopback HTTP target
+  that follows a redirect to a non-loopback host is refused (hop-by-hop check in
+  `RemoteGuardedTransport`) with a redacted URL in the message whenever
+  `allow_remote_targets` is off; the remote host is never contacted.
+- WSGI targets are quarantined after an uninterruptible timeout: because the
+  abandoned handler thread cannot be stopped, every later case fails locally with
+  `request not sent: target quarantined ...` instead of being sent to a target
+  whose state may be mid-write.
+- ASGI cancellation edge cases are detected instead of silently trusted: a handler
+  that does not stop within the cancel grace period (default 1 s) or that blocks
+  the event loop with synchronous code quarantines the target; a handler that is
+  cancelled cleanly does **not** quarantine, and the next case still runs.
+
+### Changed
+
+- Distribution name corrected in docs: the PyPI distribution is `apiparity-check`
+  (the bare name `apiparity` is taken); the import package and CLI command remain
+  `apiparity`.
+
 ## [0.1.1] - 2026-10-20
 
 ### Fixed

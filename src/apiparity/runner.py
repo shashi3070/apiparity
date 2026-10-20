@@ -128,6 +128,7 @@ async def run_comparison(
         follow_redirects=_effective_follow_redirects(config, corpus),
         corpus_dir=corpus.directory,
         default_timeout=config.effective_timeout(corpus.defaults),
+        allow_remote=config.safety.allow_remote_targets,
     )
     candidate = resolve_target(
         candidate_cfg,
@@ -136,6 +137,7 @@ async def run_comparison(
         follow_redirects=_effective_follow_redirects(config, corpus),
         corpus_dir=corpus.directory,
         default_timeout=config.effective_timeout(corpus.defaults),
+        allow_remote=config.safety.allow_remote_targets,
     )
 
     started_at = _utc_now()

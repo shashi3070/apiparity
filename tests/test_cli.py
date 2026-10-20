@@ -490,6 +490,47 @@ def test_compare_secrets_absent_from_console_and_files(
         assert secret not in junit_text
 
 
+def test_compare_credentialed_url_never_reaches_stdout_or_reports(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """URL userinfo/query secrets are absent from console output, report.json,
+    and junit.xml; the printed safety summary shows the redacted form instead."""
+    import socket as _socket
+
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    dead_port = sock.getsockname()[1]
+    sock.close()
+    old_url = f"http://admin:hunter2@127.0.0.1:{dead_port}?access_token=secret-value"
+    new_url = f"http://127.0.0.1:{dead_port}"
+
+    outdir = tmp_path / "out"
+    rc = main(
+        [
+            "compare",
+            "--corpus",
+            EQUIVALENT,
+            "--output",
+            str(outdir),
+            "--old-url",
+            old_url,
+            "--new-url",
+            new_url,
+        ]
+    )
+    assert rc == EXIT_MISMATCH  # connection refused on both sides
+
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
+    report_text = (outdir / "report.json").read_text(encoding="utf-8")
+    junit_text = (outdir / "junit.xml").read_text(encoding="utf-8")
+    for secret in ("hunter2", "admin", "secret-value"):
+        assert secret not in combined, f"secret {secret!r} printed to console"
+        assert secret not in report_text, f"secret {secret!r} written to report.json"
+        assert secret not in junit_text, f"secret {secret!r} written to junit.xml"
+    assert "[REDACTED]" in combined  # safety summary prints the masked URL
+
+
 # --------------------------------------------------------------------------- #
 # subprocess entry point
 # --------------------------------------------------------------------------- #

@@ -25,6 +25,7 @@ bounded.
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Any
 
@@ -41,9 +42,16 @@ from apiparity.targets.base import (
     read_capped_async,
 )
 
-__all__ = ["LIFESPAN_TIMEOUT_SECONDS", "AsgiTarget"]
+__all__ = ["CANCEL_GRACE_SECONDS", "LIFESPAN_TIMEOUT_SECONDS", "AsgiTarget"]
 
 LIFESPAN_TIMEOUT_SECONDS = 10.0
+
+#: How long a cancelled handler gets to stop before the target is quarantined.
+CANCEL_GRACE_SECONDS = 1.0
+
+#: Slack allowed before a finished-but-late request counts as "the event loop
+#: was blocked by in-process code" (guards against timer jitter at the deadline).
+_BLOCKED_LOOP_TOLERANCE = 0.1
 
 
 class AsgiTarget(Target):
@@ -58,6 +66,7 @@ class AsgiTarget(Target):
         corpus_dir: Path,
         default_timeout: float = 10.0,
         lifespan_timeout: float = LIFESPAN_TIMEOUT_SECONDS,
+        cancel_grace: float = CANCEL_GRACE_SECONDS,
     ) -> None:
         super().__init__(
             side,
@@ -70,6 +79,7 @@ class AsgiTarget(Target):
         self._app = app
         self._lifespan_mode: LifespanMode = config.lifespan
         self._lifespan_timeout = lifespan_timeout
+        self._cancel_grace = cancel_grace
         self._client: httpx.AsyncClient | None = None
         self._lifespan_task: asyncio.Task[None] | None = None
         self._lifespan_queue: asyncio.Queue[dict[str, Any]] | None = None
@@ -267,21 +277,66 @@ class AsgiTarget(Target):
         if self._client is None:  # pragma: no cover — lifecycle misuse guard
             raise RuntimeError("target used before startup()")
         # ASGITransport cannot enforce network timeouts itself, so the
-        # per-request timeout is enforced here with an asyncio deadline; the
-        # stream context is cancelled cleanly when it fires.
+        # per-request timeout is enforced here. The request runs as its own
+        # task so the deadline can *stop waiting* even when the handler
+        # resists cancellation — and so a handler that proves uncancellable
+        # (or blocks the event loop) quarantines the target instead of being
+        # silently reported as stopped.
         deadline = _request_deadline(kwargs)
         if deadline is None:
             return await self._stream(method, url, kwargs, started)
-        try:
-            return await asyncio.wait_for(
-                self._stream(method, url, kwargs, started), timeout=deadline
-            )
-        except TimeoutError:
+
+        loop_started = time.monotonic()
+        task: asyncio.Task[ResponseSnapshot] = asyncio.create_task(
+            self._stream(method, url, kwargs, started),
+            name=f"apiparity-request-{self.side}",
+        )
+        done, _pending = await asyncio.wait({task}, timeout=deadline)
+
+        if task in done:
+            # Finished within the wait. Timers cannot fire while synchronous
+            # in-process code blocks the loop, so a measured elapsed time past
+            # the deadline means the loop was blocked by the handler itself.
+            elapsed = time.monotonic() - loop_started
+            if elapsed > deadline + _BLOCKED_LOOP_TOLERANCE:
+                self._quarantine(
+                    f"target quarantined: in-process code blocked the event loop for "
+                    f"{elapsed:.2f}s (past the {deadline:g}s request timeout) during an "
+                    "ASGI request; application state can no longer be trusted"
+                )
+                return _error_snapshot(
+                    "timeout",
+                    f"ASGI request exceeded the {deadline:g}s request timeout "
+                    "(event loop blocked by in-process code; target quarantined)",
+                    started,
+                )
+            return _task_result(task)
+
+        # Deadline fired with the handler still running: cancel, then wait a
+        # bounded grace period for it to actually stop.
+        task.cancel()
+        done, _pending = await asyncio.wait({task}, timeout=self._cancel_grace)
+        if task in done:
+            _swallow_task_exception(task)
+            # Cancellation succeeded — the handler stopped; its partial state
+            # was observed while it was still running, as with any timeout.
             return _error_snapshot(
                 "timeout",
-                f"ASGI request exceeded the {deadline:g}s request timeout",
+                f"ASGI request exceeded the {deadline:g}s request timeout (handler cancelled)",
                 started,
             )
+        task.add_done_callback(_swallow_task_exception)  # abandoned — no warnings
+        self._quarantine(
+            f"target quarantined: the ASGI handler did not stop within "
+            f"{self._cancel_grace:g}s after cancellation during a request that "
+            "exceeded its timeout; application state can no longer be trusted"
+        )
+        return _error_snapshot(
+            "timeout",
+            f"ASGI request exceeded the {deadline:g}s request timeout and the "
+            "handler could not be cancelled (target quarantined)",
+            started,
+        )
 
     async def _stream(
         self,
@@ -298,7 +353,17 @@ class AsgiTarget(Target):
             )
 
 
-def _swallow_task_exception(task: asyncio.Task[None]) -> None:
+def _swallow_task_exception(task: asyncio.Task[Any]) -> None:
     if task.cancelled():
         return
     task.exception()
+
+
+def _task_result(task: asyncio.Task[ResponseSnapshot]) -> ResponseSnapshot:
+    """Return a finished task's result, re-raising its exception."""
+    if task.cancelled():  # pragma: no cover — this path never cancels the task
+        raise RuntimeError("request task was cancelled unexpectedly")
+    exc = task.exception()
+    if exc is not None:
+        raise exc
+    return task.result()
