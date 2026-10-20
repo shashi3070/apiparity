@@ -40,15 +40,15 @@ mutating traffic or talk to non-loopback hosts without explicit opt-ins.
 ## Install
 
 ```bash
-pip install apiparity
+pip install apiparity-check
 ```
 
 Runtime dependencies: `httpx`, `PyYAML` — nothing else. Optional extras for in-process
 targets:
 
 ```bash
-pip install "apiparity[flask]"    # WSGI targets (Flask, Werkzeug, ...)
-pip install "apiparity[fastapi]"  # ASGI targets (FastAPI, Starlette, ...)
+pip install "apiparity-check[flask]"    # WSGI targets (Flask, Werkzeug, ...)
+pip install "apiparity-check[fastapi]"  # ASGI targets (FastAPI, Starlette, ...)
 ```
 
 Requires Python ≥ 3.11.
@@ -213,7 +213,7 @@ Exit codes are the contract:
 
 ```yaml
 # GitHub Actions fragment
-- run: pip install apiparity flask fastapi uvicorn
+- run: pip install apiparity-check flask fastapi uvicorn
 - run: apiparity validate --corpus tests/parity/corpus.yaml --config tests/parity/config.yaml
 - run: >
     apiparity compare --corpus tests/parity/corpus.yaml --config tests/parity/config.yaml

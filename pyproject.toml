@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "apiparity"
+name = "apiparity-check"
 dynamic = ["version"]
 description = "Behavioral parity checker for API migrations — replay one request corpus against a baseline and a candidate implementation and report exactly where behavior differs."
 readme = "README.md"
