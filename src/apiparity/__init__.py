@@ -10,7 +10,7 @@ flow on a private event loop for callers that are not async.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "ApiParityError",

@@ -661,7 +661,8 @@ python -m build         # sdist + wheel succeed
 
 ## 20. Packaging & release readiness
 
-- `pyproject.toml`: setuptools ≥68 backend, `name = "apiparity-check"`, `version = "0.1.0"`
+- `pyproject.toml`: setuptools ≥68 backend, `name = "apiparity-check"`,
+  dynamic version from `src/apiparity/__init__.py` (`__version__ = "0.1.1"`)
   (**distribution name** on PyPI is `apiparity-check` because the bare name `apiparity` was
   rejected as too similar to an existing project; the import package and the console script
   remain `apiparity`). (**single authoritative version location** — define in
