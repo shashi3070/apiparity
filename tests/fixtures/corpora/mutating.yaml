@@ -1,0 +1,25 @@
+version: 1
+
+defaults:
+  timeout_seconds: 10
+
+cases:
+  - id: order-validation-error
+    description: invalid body → identical 422 shape (no state change)
+    method: POST
+    path: /api/orders
+    json:
+      quantity: "not-a-number"
+
+  - id: order-create
+    description: state-changing create (requires --allow-mutating-requests)
+    method: POST
+    path: /api/orders
+    json:
+      item: "widget"
+      quantity: 2
+
+  - id: order-list
+    description: read back the per-process store
+    method: GET
+    path: /api/orders

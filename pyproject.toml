@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apiparity"
+dynamic = ["version"]
+description = "Behavioral parity checker for API migrations — replay one request corpus against a baseline and a candidate implementation and report exactly where behavior differs."
+readme = "README.md"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Shashi Kundan", email = "shashikundan0001@gmail.com"}
+]
+requires-python = ">=3.11"
+keywords = [
+    "api", "testing", "migration", "flask", "fastapi", "parity",
+    "regression", "diff", "comparison", "wsgi", "asgi", "ci",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: FastAPI",
+    "Framework :: Flask",
+]
+dependencies = [
+    "httpx>=0.27,<1",
+    "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+flask = ["flask>=3.0"]
+fastapi = ["fastapi>=0.110"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "build>=1.2",
+    "flask>=3.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.30",
+    "types-PyYAML>=6",
+]
+
+[project.scripts]
+apiparity = "apiparity.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/shashi3070/apiparity"
+Repository = "https://github.com/shashi3070/apiparity"
+Issues = "https://github.com/shashi3070/apiparity/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["apiparity*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "apiparity.__version__"}
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "SIM105",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011", "SIM117"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/apiparity"]
+strict = true
+warn_unreachable = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra"
+filterwarnings = [
+    "error::DeprecationWarning:apiparity.*",
+]
+
+[tool.coverage.run]
+source = ["apiparity"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

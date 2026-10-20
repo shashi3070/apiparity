@@ -1,0 +1,60 @@
+version: 1
+
+defaults:
+  timeout_seconds: 10
+
+normalization:
+  ignored_json_pointers:
+    - /metadata/request_id
+    - /metadata/generated_at
+
+cases:
+  - id: health
+    description: simple health check
+    method: GET
+    path: /health
+
+  - id: customer
+    description: nested JSON with dynamic metadata
+    method: GET
+    path: /api/customers/c-42
+
+  - id: items-default
+    description: query-parameter default limit=10
+    method: GET
+    path: /api/items
+
+  - id: items-filtered
+    description: explicit limit and q
+    method: GET
+    path: /api/items
+    query:
+      limit: ["3"]
+      q: ["widget"]
+
+  - id: search-repeated-tags
+    description: repeated query parameters preserved in order
+    method: GET
+    path: /api/search
+    query:
+      tags: ["alpha", "beta", "gamma"]
+
+  - id: path-unicode
+    description: unicode/space path parameter decoding
+    method: GET
+    path: /api/messages/caf%C3%A9%20menu
+
+  - id: not-found
+    description: unknown route 404 shape
+    method: GET
+    path: /no/such/route
+
+  - id: auth-failure
+    description: missing Authorization header → 401 shape
+    method: GET
+    path: /api/private
+
+  - id: server-exception
+    description: endpoint raising → identical 500 shape
+    method: GET
+    path: /api/boom

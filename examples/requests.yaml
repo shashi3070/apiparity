@@ -1,0 +1,77 @@
+# Example request corpus for apiparity.
+#
+# Replay it against the fixture apps included in this repository:
+#
+#   apiparity compare --corpus examples/requests.yaml --config examples/config.yaml
+#
+# Schema: https://github.com/shashi3070/apiparity (see REQUIREMENTS.md §7).
+# Every case is validated before any request is sent; a bad file fails closed.
+
+version: 1
+
+defaults:
+  timeout_seconds: 10
+
+normalization:
+  # Fields that legitimately differ between runs (uuids, timestamps).
+  ignored_json_pointers:
+    - /metadata/request_id
+    - /metadata/generated_at
+  # Hop-by-hop / environment headers are ignored by default
+  # (date, content-length, server, connection); extend as needed:
+  ignored_headers: []
+
+cases:
+  - id: health
+    description: trivial liveness probe
+    method: GET
+    path: /health
+
+  - id: customer-detail
+    description: nested JSON document with dynamic metadata
+    method: GET
+    path: /api/customers/c-1001
+
+  - id: items-with-defaults
+    description: server applies default limit=10 when the query param is absent
+    method: GET
+    path: /api/items
+
+  - id: items-filtered
+    description: explicit query parameters
+    method: GET
+    path: /api/items
+    query:
+      limit: ["3"]
+      q: ["widget"]
+
+  - id: search-repeated-params
+    description: repeated query keys must preserve order
+    method: GET
+    path: /api/search
+    query:
+      tags: ["alpha", "beta"]
+
+  - id: authorized-request
+    description: header-driven behavior (Authorization changes the response)
+    method: GET
+    path: /api/private
+    headers:
+      Authorization: "Bearer example-token"
+
+  - id: validation-error
+    description: invalid JSON body → identical 422 error shape
+    method: POST
+    path: /api/orders
+    json:
+      quantity: "not-a-number"
+    # POST requires --allow-mutating-requests (or safety.allow_mutating_requests).
+
+  - id: create-order
+    description: state-changing create — needs the mutating opt-in
+    method: POST
+    path: /api/orders
+    json:
+      item: "widget"
+      quantity: 2
+    timeout_seconds: 5

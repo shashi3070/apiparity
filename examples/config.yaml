@@ -1,0 +1,55 @@
+# Example project configuration for apiparity.
+#
+#   apiparity compare --corpus examples/requests.yaml --config examples/config.yaml
+#
+# The targets below point at the fixture applications shipped with this repo
+# (tests/fixtures), so the example runs out of the box. Swap `app` for `url`
+# to compare two running services over HTTP instead.
+
+targets:
+  old:
+    kind: wsgi
+    app: legacy_flask.app:app
+    # factory: true   # call create_app() instead of importing `app`
+  new:
+    kind: asgi
+    app: migrated_fastapi.app:app
+    # factory: true
+
+comparison:
+  # compare_status: true
+  # compare_headers: true
+  # compare_body: true
+  max_differences_per_case: 50
+  response_size_limit_bytes: 1048576   # 1 MiB per response
+  timing:
+    mode: "off"                        # off | warn | fail (quote: bare off is YAML false)
+    # max_ms: 250                      # required for warn/fail modes
+
+normalization:
+  ignored_json_pointers:
+    - /metadata/request_id
+    - /metadata/generated_at
+  # ignored_headers replaces the built-in defaults (date, content-length,
+  # server, connection) when set — only list it if you need to override them.
+  whitespace:
+    text: false                        # true → collapse insignificant whitespace
+  array_order: {}                      # JSON Pointer → "preserve" | "sort"
+
+redaction:
+  # Defaults already cover authorization/cookie/set-cookie/x-api-key headers
+  # and the /credentials/token JSON pointer; extend with project-specific names:
+  sensitive_json_pointers:
+    - /credentials/token
+    - /data/password
+
+safety:
+  # Never enable these against systems you do not own and cannot reset.
+  allow_mutating_requests: false
+  allow_remote_targets: false
+
+reporting:
+  json: true
+  junit_xml: true
+  terminal: true
+  include_body_previews: false         # previews are redacted but off by default
