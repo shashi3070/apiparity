@@ -6,13 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.2] - 2026-10-20
+## [0.1.3] - 2026-10-20
 
-### Fixed
+### Changed
 
-- Windows CI path false positives: URL leak assertions now ignore filesystem paths so temporary directories (e.g. `C:\Users\runneradmin\...`) do not trigger failures.
-- URL redaction hardening: decode encoded query/fragment parameter names before sensitivity checks; redact sensitive keys in URL fragments; IPv6 hostnames preserved with brackets in `redact_url()`.
-- Target URL construction: handle base URLs with query/fragment components safely when appending corpus paths; preserve base query params.
+- README uses absolute GitHub raw URL for infographic so image renders on PyPI.
 
 ### Fixed (previous)
 
